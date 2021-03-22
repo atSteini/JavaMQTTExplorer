@@ -13,6 +13,10 @@ import org.eclipse.paho.client.mqttv3.MqttPersistenceException;
 
 import app.App;
 
+/*
+ * @author Florian Steinkellner
+ * @date March 22, 2021
+ */
 public class MQTTHandler implements MqttCallback {
 	private IMqttClient client;
 	private String mqttServer, mqttUser, mqttPwd, mqttClientName;	

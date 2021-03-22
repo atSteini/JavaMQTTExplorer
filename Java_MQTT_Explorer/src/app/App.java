@@ -54,7 +54,7 @@ import javax.swing.JSeparator;
 
 /*
  * @author Florian Steinkellner
- * @date March 21, 2021
+ * @date March 22, 2021
  */
 public class App extends JFrame {
 	private static final long serialVersionUID = 1L;

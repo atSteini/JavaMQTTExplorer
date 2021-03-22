@@ -1,5 +1,9 @@
 package pojo;
 
+/*
+ * @author Florian Steinkellner
+ * @date March 22, 2021
+ */
 public class StringOp {
 
 	public static Integer toInt(String s) {

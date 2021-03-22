@@ -5,6 +5,10 @@ import java.util.ArrayList;
 
 import pojo.*;
 
+/*
+ * @author Florian Steinkellner
+ * @date March 22, 2021
+ */
 public class GlobalVar {
 	//Final Variables (Only to be changed here!)
 	public static final Font txtFieldFont = new Font("Monospaced", Font.PLAIN, 12);
