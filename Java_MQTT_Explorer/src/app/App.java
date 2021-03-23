@@ -9,9 +9,12 @@ import com.formdev.flatlaf.intellijthemes.materialthemeuilite.FlatGitHubIJTheme;
 import org.eclipse.paho.client.mqttv3.MqttException;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.eclipse.paho.client.mqttv3.MqttPersistenceException;
+import org.eclipse.paho.client.mqttv3.MqttSecurityException;
 
+import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 
@@ -27,12 +30,12 @@ import java.awt.event.KeyEvent;
 import javax.swing.JFrame;
 import javax.swing.JPanel;
 import javax.swing.border.EmptyBorder;
+import javax.swing.DefaultListModel;
 import javax.swing.GroupLayout;
 import javax.swing.GroupLayout.Alignment;
 import javax.swing.ImageIcon;
 import javax.swing.border.TitledBorder;
 import javax.swing.filechooser.FileNameExtensionFilter;
-import javax.swing.text.Position.Bias;
 import javax.swing.JMenuBar;
 import javax.swing.JLabel;
 import javax.swing.JTextField;
@@ -42,15 +45,14 @@ import javax.swing.JFileChooser;
 import javax.swing.JMenu;
 import javax.swing.JTabbedPane;
 import javax.swing.JMenuItem;
-import javax.swing.JTree;
 import javax.swing.JScrollPane;
-import javax.swing.tree.DefaultTreeModel;
-import javax.swing.tree.TreePath;
-import javax.swing.tree.DefaultMutableTreeNode;
 import javax.swing.JSpinner;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.UIManager;
 import javax.swing.JSeparator;
+import javax.swing.JList;
+import java.awt.BorderLayout;
+import javax.swing.SwingConstants;
 
 /*
  * @author Florian Steinkellner
@@ -72,11 +74,9 @@ public class App extends JFrame {
 	private JMenu mnFile;
 	private JMenuItem mntmExit;
 	private JTabbedPane tbpData;
-	private JScrollPane scrlTopicTree;
 	private JPanel pnlGraph;
 	private JPanel pnlRawData;
 	private JPanel pnlParsed;
-	private JPanel pnlTopic;
 	private JPanel pnlPublish;
 	private JPanel pnlServerSettings;
 	private JLabel lblServer;
@@ -91,14 +91,21 @@ public class App extends JFrame {
 	private JButton btnPublish;
 	private JButton btnAddTopic;
 	private JLabel lblTopic;
-	private JTree treeTopics;
 	private JMenuItem mntmSaveSession;
+	private JMenuItem mntmOpenSession;
+	private static JPanel pnlShowTopics;
+	private static JList<String> listShowTopics;
+	private static JPanel pnlTopic;
+	public static JLabel lblStatus;
+	public static JPanel pnlStatus;
 	
 	ArrayList<JTextField> inputsServer;
 	ArrayList<JTextField> inputsTopic;
 	ArrayList<JTextField> inputsPublish;
 	ImageIcon iconImage;
-
+	private JScrollPane scrlShowTopics;
+	private JMenuItem mntmClear;
+	
 	public static void main(String[] args) {
 		EventQueue.invokeLater(new Runnable() {
 			public void run() {
@@ -117,6 +124,7 @@ public class App extends JFrame {
 	}
 	
 	public static void messageArrived(String topic, MqttMessage message) {
+		reloadTopics();
 	}
 	
 	protected void btnPublishActionPerformed(ActionEvent e) throws MqttPersistenceException, MqttException {
@@ -125,18 +133,18 @@ public class App extends JFrame {
 		GlobalVar.mqttHandler.publish(txtPubTopic.getText(), this.txtPubMessage.getText());
 	}
 
-	protected void btnAddTopicActionPerformed(ActionEvent e) {
+	protected void btnAddTopicActionPerformed(ActionEvent e) throws MqttSecurityException, MqttException {
 		Logger.buttonLog(e);
 		
 		String topic = txtTopic.getText();
 		
-		GlobalVar.addedTopics.add(topic);
-		
-		Logger.consoleLog("Added Topic: " + topic);
+		addTopic(topic);
 	}
 
 	protected void btnSetServerActionPerformed(ActionEvent e) throws MqttException {
 		Logger.buttonLog(e);
+
+		setServerButton(GlobalVar.CONN_WAITING);
 		
 		GlobalVar.mqttHandler = new MQTTHandler(
 						txtServer.getText(),
@@ -151,12 +159,14 @@ public class App extends JFrame {
 			
 			txtClientName.setText(GlobalVar.mqttHandler.getMqttClientName());
 			
-			treeTopics.setModel(parseTree("Connected to " + GlobalVar.mqttHandler.getBroker(), '\t'));
+			setServerButton(GlobalVar.CONN_CONNECTED);
+			
+			subscribeToAllTopics();
 		}
 		
 		Logger.consoleLog(GlobalVar.mqttHandler);
 	}
-	
+
 	protected void txtPubMessageKeyReleased(KeyEvent e) {
 		Logger.keyLog(e);
 	}
@@ -203,14 +213,180 @@ public class App extends JFrame {
 		saveSessionTo(file);
 	}
 
+	protected void mntmOpenSessionActionPerformed(ActionEvent e) throws IOException, MqttException {
+		Logger.buttonLog(e);
+		
+		File file = showSessionFileChooser("Load Session", false);
+		
+		if (file == null) { return; }
+		
+		loadSession(file);
+	}
+
+	protected void mntmClearActionPerformed(ActionEvent e) {
+		clearAll();
+	}
+	
 	protected void mntmExitActionPerformed(ActionEvent e) {
 		Logger.buttonLog(e);
 		
 		System.exit(0);
 	}
 	
+	private void addTopic(Topic topic) throws MqttSecurityException, MqttException {
+		if (topicExists(topic)) { 
+			Logger.consoleLog(topic.getTopic() + " already exists!");
+			return; 
+		}
+		GlobalVar.addedTopics.add(topic);
+		
+		reloadTopics();
+		
+		Logger.consoleLog("Added Topic: " + topic);
+	}
+	
+	private boolean topicExists(Topic topic) {
+		for (Topic searchTopic : GlobalVar.addedTopics) {
+			if (searchTopic.getTopic().equals(topic.getTopic())) {
+				return true;
+			}
+		}
+		
+		return false;
+	}
 
+	private void addTopic(String topic) throws MqttSecurityException, MqttException {
+		addTopic(new Topic(topic));
+	}
+	
+	private void subscribeToAllTopics() throws MqttSecurityException, MqttException {
+		for(Topic topic : GlobalVar.addedTopics) {
+			GlobalVar.mqttHandler.subscribeTo(topic);
+		}
+	}
+	
+	private static void reloadTopics(String ... addBefore) {
+		DefaultListModel<String> model = new DefaultListModel<>();
+
+		for (String before : addBefore) {
+			if (before != null) {
+				model.addElement(before);
+			}
+		}
+
+		for (Topic topic : GlobalVar.addedTopics) {
+			model.addElement(topic.getListView());
+		}
+		
+		listShowTopics.setModel(model);
+		pnlTopic.repaint();
+	}
+	
+	private void setServerSettings(String line, int index, String splitter) {
+		switch(index) {
+		case 0:
+			setServer(line.split(splitter)[1]);
+			break;
+		case 1:
+			setUser(line.split(splitter)[1]);
+			break;
+		case 2:
+			setPassword(line.split(splitter)[1]);
+			break;
+		case 3:
+			setClientName(line.split(splitter)[1]);
+			break;
+		case 4:
+			setPort(StringOp.toInt(line.split(splitter)[1]));
+			break;
+		}
+		
+		checkServerInputs();
+	}
+
+	private void setServerButton(int state) {
+		switch (state) {
+		case GlobalVar.CONN_WAITING:
+			btnSetServer.setText("Connecting...");
+			break;
+		case GlobalVar.CONN_CONNECTED:
+			btnSetServer.setText("Reconnect");
+			break;
+		case GlobalVar.CONN_DISCONNECTED:
+			btnSetServer.setText("Connect");
+			break;
+		default:
+				
+		}
+	}
+	
+	private void setPort(int port) {
+		spPort.setValue(port);
+		
+		Logger.consoleLog("Set Port: " + port);
+	}
+
+	private void setClientName(String clientName) {
+		txtClientName.setText(clientName);
+		
+		Logger.consoleLog("Set ClientName: " + clientName);
+	}
+
+	private void setPassword(String password) {
+		txtPassword.setText(password);
+		
+		Logger.consoleLog("Set Password: " + password);
+	}
+
+	private void setUser(String user) {
+		txtUser.setText(user);
+		
+		Logger.consoleLog("Set User: " + user);
+	}
+
+	private void setServer(String server) {
+		txtServer.setText(server);
+		
+		Logger.consoleLog("Set Server: " + server);
+	}
+	
+	private void setTopics(ArrayList<Topic> topics) {
+		GlobalVar.addedTopics = topics;
+		
+		Logger.consoleLog("Set topics: " + topics);
+	}
+
+	private void loadSession(File file) throws IOException, MqttException {
+		Logger.consoleLog("Loading session: " + file);
+		BufferedReader in = new BufferedReader(new FileReader(file));
+		
+		String line = null;
+		int counter = 0;
+		String splitter = ":";
+		
+		while ((line = in.readLine()) != null) {
+			if(counter < 5) {
+				setServerSettings(line, counter, splitter);
+				
+				counter++;
+				continue;
+			}
+			
+			if(line.contains("topic")) {
+				addTopic(line.split(splitter)[1]);
+			}
+		}
+		
+		in.close();
+
+		Logger.consoleLog("Done loading session: " + file);
+		
+		btnSetServerActionPerformed(null);
+	}
+	
 	private void saveSessionTo(File file) throws IOException {
+		Logger.consoleLog("Saving session: " + file);
+		
 		BufferedWriter out = new BufferedWriter(new FileWriter(file));
 		
 		String ls = System.getProperty("line.separator");
@@ -222,11 +398,17 @@ public class App extends JFrame {
 		out.append("Port:" + spPort.getValue() + ls);
 		
 		for (int i = 0; i < GlobalVar.addedTopics.size(); i++) {
-			out.append("topic" + i + ":" + GlobalVar.addedTopics.get(i) + ls);
+			out.append("topic" + i + ":" + GlobalVar.addedTopics.get(i));
+			
+			if (i < GlobalVar.addedTopics.size() - 1) {
+				out.append(ls);
+			}
 		}
 		
 		out.flush();
 		out.close();
+		
+		Logger.consoleLog("Done saving session: " + file);
 	}
 	
 	public File showSessionFileChooser(String title, boolean isSave) {
@@ -234,6 +416,8 @@ public class App extends JFrame {
 		String description = "Session Files (*.session)";
 		
 		JFileChooser fileChooser = new JFileChooser();
+
+		Logger.consoleLog("Showing FileChooser [" + title + "] - isSave: " + isSave);
 		
 		fileChooser.setDialogTitle(title);   
 		
@@ -252,16 +436,33 @@ public class App extends JFrame {
 		File file = fileChooser.getSelectedFile();
 		if (userSelection == JFileChooser.APPROVE_OPTION) {
 			if (!file.getAbsolutePath().toLowerCase().endsWith("." + extension)) {
+				Logger.consoleLog(file.getAbsoluteFile() + " has no valid extension. Adding " + extension);
+				
 				file = new File(file.getAbsolutePath() + "." + extension);
 			}
 			
+			Logger.consoleLog("FileChooser [" + title + "] returned " + file);
 			return file;
 		}
 		
 		return null;
 	}
 	
+	private void clearAll() {
+		setServer("");
+		setUser("");
+		setPassword("");
+		setClientName("");
+		setPort(1883);
+		setTopics(new ArrayList<Topic>());
+		reloadTopics();
+		
+		Logger.consoleLog("Cleared session!");
+	}
+	
 	public void setIconImage(String path) {
+		Logger.consoleLog("Setting Icon Image: " + path);
+		
 		iconImage = new ImageIcon(path);
 		
 		this.setIconImage(iconImage.getImage());
@@ -300,89 +501,14 @@ public class App extends JFrame {
 		
 		return true;
 	}
-	
-	/**
-	 * Parses a String to a TreeModel. 
-	 * Every line is a new Node, the level is determined by the amount of indent characters before the object in the line.
-	 * Example (indentChar = '-')
-	 * root
-	 * -level1node
-	 * --level2node
-	 * ---level3node
-	 * -level1node
-	 * @param source
-	 * @param indentChar
-	 * @return
-	 */
-	public static DefaultTreeModel parseTree(String source, char indentChar) {
-		String[] lines = source.split(System.getProperty("line.separator"));
-		
-		DefaultMutableTreeNode root = new DefaultMutableTreeNode(lines[0]);
-		DefaultTreeModel model = new DefaultTreeModel(root);
-		JTree tree = new JTree(model);
-		
-		for (int i = 1; i < lines.length; i++) {
-			String newLine = lines[i];
-			int newIndent = countOccurences(newLine, indentChar, 0);
-			DefaultMutableTreeNode newNode = new DefaultMutableTreeNode(newLine);
-			
-			for (int j = i; j >= 0; j--) {
-				String previousLine = lines[j];
-				int previousIndent = countOccurences(previousLine, indentChar, 0);
-				
-				if (previousIndent == 0) {
-					root.add(newNode);
-				} else if (newIndent > previousIndent) {
-					TreePath path = tree.getNextMatch(previousLine, 0, Bias.Forward);
-					
-					if (path != null) {
-						DefaultMutableTreeNode previousNode = (DefaultMutableTreeNode) path.getLastPathComponent();
-						int previousChildCount = previousNode.getChildCount();
-						
-						previousNode.insert(newNode, previousChildCount == 0 ? previousChildCount : previousChildCount - 1);
-						break;
-					}
-				}
-			}
-			
-			model = new DefaultTreeModel(root);
-			tree = new JTree(model);
-		}
-		
-		return model;
-	}
-	
-	/**
-	 * Converts a char array to a String.
-	 * @param a
-	 * @return
-	 */
-	public String charArrayToString(char[] a) {
-		String s = "";
-		
-		for (int i = 0; i < a.length; i++) {
-			s += a[i];
-		}
-		
-		return s;
-	}
-	
-	/**
-	 * Counts how many times a character is in a String.
-	 * @param someString
-	 * @param searchedChar
-	 * @param index
-	 * @return
-	 */
-	public static int countOccurences(String someString, char searchedChar, int index) {
-		if (index >= someString.length()) {
-			return 0;
-		}
-			    
-		int count = someString.charAt(index) == searchedChar ? 1 : 0;
-		return count + countOccurences(someString, searchedChar, index + 1);
-	}
 
+	public static void setStatusBar(Object o) {
+		if (o == null || lblStatus == null || pnlStatus == null) { return; }
+		
+		lblStatus.setText(o.toString());
+		pnlStatus.repaint();
+	}
+	
 	/**
 	 * Initializes all the UI components.
 	 */
@@ -391,7 +517,6 @@ public class App extends JFrame {
 		FlatGitHubIJTheme.install();
 		Logger.consoleLog("Installed " + UIManager.getLookAndFeel());
 		
-		Logger.consoleLog("Setting Icon Image: " + GlobalVar.iconImagePath);
 		setIconImage(GlobalVar.iconImagePath);
 		
 		Logger.consoleLog("Loading UI Components...");
@@ -424,6 +549,26 @@ public class App extends JFrame {
 		});
 		mnFile.add(mntmSaveSession);
 		
+		mntmOpenSession = new JMenuItem("Load Session");
+		mntmOpenSession.addActionListener(new ActionListener() {
+			public void actionPerformed(ActionEvent e) {
+				try {
+					mntmOpenSessionActionPerformed(e);
+				} catch (IOException | MqttException ex) {
+					Logger.errorLog(ex);
+				}
+			}
+		});
+		mnFile.add(mntmOpenSession);
+		
+		mntmClear = new JMenuItem("Clear Session");
+		mntmClear.addActionListener(new ActionListener() {
+			public void actionPerformed(ActionEvent e) {
+				mntmClearActionPerformed(e);
+			}
+		});
+		mnFile.add(mntmClear);
+		
 		JSeparator sprtrFile = new JSeparator();
 		mnFile.add(sprtrFile);
 		mnFile.add(mntmExit);
@@ -432,34 +577,6 @@ public class App extends JFrame {
 		setContentPane(background);
 		
 		tbpData = new JTabbedPane(JTabbedPane.TOP);
-		
-		scrlTopicTree = new JScrollPane();
-		
-		pnlGraph = new JPanel();
-		tbpData.addTab("Graph", null, pnlGraph, null);
-		GroupLayout grLoGraph = new GroupLayout(pnlGraph);
-		grLoGraph.setHorizontalGroup(
-			grLoGraph.createParallelGroup(Alignment.LEADING)
-				.addGap(0, 496, Short.MAX_VALUE)
-		);
-		grLoGraph.setVerticalGroup(
-			grLoGraph.createParallelGroup(Alignment.LEADING)
-				.addGap(0, 342, Short.MAX_VALUE)
-		);
-		pnlGraph.setLayout(grLoGraph);
-		
-		pnlParsed = new JPanel();
-		tbpData.addTab("Parsed Data", null, pnlParsed, null);
-		GroupLayout grpLoParsed = new GroupLayout(pnlParsed);
-		grpLoParsed.setHorizontalGroup(
-			grpLoParsed.createParallelGroup(Alignment.LEADING)
-				.addGap(0, 496, Short.MAX_VALUE)
-		);
-		grpLoParsed.setVerticalGroup(
-			grpLoParsed.createParallelGroup(Alignment.LEADING)
-				.addGap(0, 342, Short.MAX_VALUE)
-		);
-		pnlParsed.setLayout(grpLoParsed);
 		
 		pnlRawData = new JPanel();
 		tbpData.addTab("Raw Data", null, pnlRawData, null);
@@ -474,6 +591,32 @@ public class App extends JFrame {
 		);
 		pnlRawData.setLayout(grpLoRawData);
 		
+		pnlParsed = new JPanel();
+		tbpData.addTab("Parsed Data", null, pnlParsed, null);
+		GroupLayout grpLoParsed = new GroupLayout(pnlParsed);
+		grpLoParsed.setHorizontalGroup(
+			grpLoParsed.createParallelGroup(Alignment.LEADING)
+				.addGap(0, 496, Short.MAX_VALUE)
+		);
+		grpLoParsed.setVerticalGroup(
+			grpLoParsed.createParallelGroup(Alignment.LEADING)
+				.addGap(0, 342, Short.MAX_VALUE)
+		);
+		pnlParsed.setLayout(grpLoParsed);
+		
+		pnlGraph = new JPanel();
+		tbpData.addTab("Graph", null, pnlGraph, null);
+		GroupLayout grLoGraph = new GroupLayout(pnlGraph);
+		grLoGraph.setHorizontalGroup(
+			grLoGraph.createParallelGroup(Alignment.LEADING)
+				.addGap(0, 496, Short.MAX_VALUE)
+		);
+		grLoGraph.setVerticalGroup(
+			grLoGraph.createParallelGroup(Alignment.LEADING)
+				.addGap(0, 342, Short.MAX_VALUE)
+		);
+		pnlGraph.setLayout(grLoGraph);
+		
 		pnlTopic = new JPanel();
 		pnlTopic.setBorder(new TitledBorder(null, "Topic", TitledBorder.LEADING, TitledBorder.TOP, null, null));
 		
@@ -482,18 +625,27 @@ public class App extends JFrame {
 		
 		pnlServerSettings = new JPanel();
 		pnlServerSettings.setBorder(new TitledBorder(null, "Server Settings", TitledBorder.LEADING, TitledBorder.TOP, null, null));
+		
+		pnlStatus = new JPanel();
+		
+		pnlShowTopics = new JPanel();
+		pnlShowTopics.setBorder(new TitledBorder(null, "Topics", TitledBorder.LEADING, TitledBorder.TOP, null, null));
 		GroupLayout grpLoBackground = new GroupLayout(background);
 		grpLoBackground.setHorizontalGroup(
-			grpLoBackground.createParallelGroup(Alignment.LEADING)
+			grpLoBackground.createParallelGroup(Alignment.TRAILING)
 				.addGroup(grpLoBackground.createSequentialGroup()
 					.addGroup(grpLoBackground.createParallelGroup(Alignment.LEADING)
-						.addComponent(tbpData, GroupLayout.PREFERRED_SIZE, 588, GroupLayout.PREFERRED_SIZE)
-						.addComponent(scrlTopicTree, GroupLayout.PREFERRED_SIZE, 586, GroupLayout.PREFERRED_SIZE))
+						.addComponent(pnlShowTopics, GroupLayout.DEFAULT_SIZE, GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+						.addComponent(tbpData, GroupLayout.DEFAULT_SIZE, 588, Short.MAX_VALUE))
 					.addGap(18)
 					.addGroup(grpLoBackground.createParallelGroup(Alignment.LEADING)
 						.addComponent(pnlTopic, 0, 0, Short.MAX_VALUE)
-						.addComponent(pnlServerSettings, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE)
+						.addComponent(pnlServerSettings, GroupLayout.DEFAULT_SIZE, GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
 						.addComponent(pnlPublish, 0, 0, Short.MAX_VALUE))
+					.addGap(8))
+				.addGroup(grpLoBackground.createSequentialGroup()
+					.addContainerGap()
+					.addComponent(pnlStatus, GroupLayout.DEFAULT_SIZE, 968, Short.MAX_VALUE)
 					.addContainerGap())
 		);
 		grpLoBackground.setVerticalGroup(
@@ -501,17 +653,30 @@ public class App extends JFrame {
 				.addGroup(grpLoBackground.createSequentialGroup()
 					.addGroup(grpLoBackground.createParallelGroup(Alignment.LEADING)
 						.addGroup(grpLoBackground.createSequentialGroup()
-							.addComponent(scrlTopicTree, GroupLayout.PREFERRED_SIZE, 256, GroupLayout.PREFERRED_SIZE)
-							.addGap(20)
+							.addComponent(pnlShowTopics, GroupLayout.PREFERRED_SIZE, 266, GroupLayout.PREFERRED_SIZE)
+							.addPreferredGap(ComponentPlacement.UNRELATED)
 							.addGroup(grpLoBackground.createParallelGroup(Alignment.BASELINE)
-								.addComponent(tbpData, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE)
+								.addComponent(tbpData, GroupLayout.DEFAULT_SIZE, 327, Short.MAX_VALUE)
 								.addGroup(grpLoBackground.createSequentialGroup()
 									.addComponent(pnlTopic, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE)
 									.addGap(14)
 									.addComponent(pnlPublish, GroupLayout.PREFERRED_SIZE, 132, GroupLayout.PREFERRED_SIZE))))
 						.addComponent(pnlServerSettings, GroupLayout.PREFERRED_SIZE, 267, GroupLayout.PREFERRED_SIZE))
-					.addContainerGap(GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
+					.addPreferredGap(ComponentPlacement.RELATED)
+					.addComponent(pnlStatus, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE))
 		);
+		pnlShowTopics.setLayout(new BorderLayout(0, 0));
+		
+		scrlShowTopics = new JScrollPane();
+		pnlShowTopics.add(scrlShowTopics, BorderLayout.CENTER);
+		
+		listShowTopics = new JList<>();
+		listShowTopics.setBorder(null);
+		scrlShowTopics.setViewportView(listShowTopics);
+		
+		lblStatus = new JLabel("no connection");
+		lblStatus.setHorizontalAlignment(SwingConstants.CENTER);
+		pnlStatus.add(lblStatus);
 		
 		lblServer = new JLabel("Server");
 		
@@ -717,7 +882,11 @@ public class App extends JFrame {
 		btnAddTopic.setEnabled(false);
 		btnAddTopic.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
-				btnAddTopicActionPerformed(e);
+				try {
+					btnAddTopicActionPerformed(e);
+				} catch (MqttException ex) {
+					Logger.errorLog(ex);
+				}
 			}
 		});
 		
@@ -747,16 +916,6 @@ public class App extends JFrame {
 					.addContainerGap())
 		);
 		pnlTopic.setLayout(grpLoTopic);
-		
-		treeTopics = new JTree();
-		treeTopics.setModel(new DefaultTreeModel(
-			new DefaultMutableTreeNode("no connection") {
-				private static final long serialVersionUID = 1L;
-				{}
-			}));
-		treeTopics.setShowsRootHandles(true);
-		
-		scrlTopicTree.setViewportView(treeTopics);
 		background.setLayout(grpLoBackground);
 		
 		inputsServer = new ArrayList<JTextField>(
@@ -768,6 +927,8 @@ public class App extends JFrame {
 		inputsPublish = new ArrayList<JTextField>(
 			      Arrays.asList(txtPubTopic, txtPubMessage));
 		
-		Logger.consoleLog("Done loading UI Components");
+		setServerButton(GlobalVar.CONN_DISCONNECTED);
+		
+		Logger.consoleLog("Done loading UI Components\n");
 	}
 }

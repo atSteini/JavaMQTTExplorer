@@ -5,17 +5,23 @@ import java.awt.event.KeyEvent;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 
+import app.App;
+
+/*
+ * @author Florian Steinkellner
+ * @date March 22, 2021
+ */
 public class Logger {
 
 	private static boolean 
 			ENABLE_ERROR_LOG = true,
 			ENABLE_CONSOLE_LOG = true,
-			ENABLE_TIMER_LOG = true,
 			ENABLE_KEY_LOG = false,
-			ENABLE_BUTTON_LOG = false;
+			ENABLE_BUTTON_LOG = false,
+			ENABLE_STATUSBAR = true;
 	
 	public static String 
-			inlineInfo = "LOGGER: ",
+			inlineInfo = "INFO: ",
 			inlineWarning = "WARNING: ",
 			inlineError = "ERROR: ",
 			inlineKey = "KEY: ",
@@ -37,8 +43,15 @@ public class Logger {
 		System.err.print(inlineError);
 	}
 
+	public static void statusLog(Object o) {
+		if (!ENABLE_STATUSBAR) { return; }
+		
+		App.setStatusBar(o);
+	}
+	
 	public static void buttonLog(ActionEvent e) {
 		if (!ENABLE_BUTTON_LOG) { return; }
+		statusLog(e);
 		
 		inlineButton();
 		System.out.println(e);
@@ -46,6 +59,7 @@ public class Logger {
 	
 	public static void keyLog(KeyEvent e) {
 		if (!ENABLE_KEY_LOG) { return; }
+		statusLog(e);
 		
 		inlineKey();
 		System.out.println(e);
@@ -53,6 +67,7 @@ public class Logger {
 	
 	public static void consoleLog(Object o) {
 		if (!ENABLE_CONSOLE_LOG) { return; }
+		statusLog(o);
 		
 		inlineInfo();
 		System.out.println(o);
@@ -60,6 +75,7 @@ public class Logger {
 
 	public static void errorLog(Object o) {
 		if (!ENABLE_ERROR_LOG) { return; }
+		statusLog(o);
 		
 		inlineError();
 		System.err.println(o);
@@ -67,6 +83,7 @@ public class Logger {
 
 	public static void errorLog(Exception e) {
 		if (!ENABLE_ERROR_LOG) { return; }
+		statusLog(e);
 		
 		StringWriter sw = new StringWriter();
 		PrintWriter pw = new PrintWriter(sw);
@@ -78,6 +95,7 @@ public class Logger {
 	
 	public static void errorLog(Throwable t) {
 		if (!ENABLE_ERROR_LOG) { return; }
+		statusLog(t);
 		
 		StringWriter sw = new StringWriter();
 		PrintWriter pw = new PrintWriter(sw);
@@ -103,12 +121,12 @@ public class Logger {
 		ENABLE_CONSOLE_LOG = eNABLE_CONSOLE_LOG;
 	}
 
-	public static boolean isENABLE_TIMER_LOG() {
-		return ENABLE_TIMER_LOG;
+	public static boolean isENABLE_STATUSBAR() {
+		return ENABLE_STATUSBAR;
 	}
 
-	public static void setENABLE_TIMER_LOG(boolean eNABLE_TIMER_LOG) {
-		ENABLE_TIMER_LOG = eNABLE_TIMER_LOG;
+	public static void setENABLE_STATUSBAR(boolean nENABLE_STATUSBAR) {
+		ENABLE_STATUSBAR = nENABLE_STATUSBAR;
 	}
 
 	public static String getInlineInfo() {

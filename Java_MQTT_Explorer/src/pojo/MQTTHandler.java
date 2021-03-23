@@ -10,8 +10,10 @@ import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttException;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.eclipse.paho.client.mqttv3.MqttPersistenceException;
+import org.eclipse.paho.client.mqttv3.MqttSecurityException;
 
 import app.App;
+import var.GlobalVar;
 
 /*
  * @author Florian Steinkellner
@@ -82,7 +84,8 @@ public class MQTTHandler implements MqttCallback {
 		String broker = getBroker();
 		
 		client = new MqttClient(broker, mqttClientName);
-
+		client.setCallback(this);
+		
 		MqttConnectOptions options = setUpConnectionOptions();
 		Logger.consoleLog("Connecting to broker: " + broker);
 
@@ -122,11 +125,19 @@ public class MQTTHandler implements MqttCallback {
 		return "tcp://" + this.mqttServer + ":" + this.mqttPort;
 	}
 	
+	public void subscribeTo(Topic topic) throws MqttSecurityException, MqttException {
+		if (!connectionAlive()) { return; }
+		
+		Logger.consoleLog("Subscribing to " + topic + " [QOS:  " + this.mqttQos + "]");
+		
+		client.subscribe(topic.getTopic(), this.mqttQos);
+	}
+	
 	/**
      * @see MqttCallback#connectionLost(Throwable)
      */
 	public void connectionLost(Throwable t) {
-		Logger.errorLog("Connection Lost:");
+		Logger.errorLog("Connection lost:");
 		Logger.errorLog(t);
 	}
 
@@ -141,9 +152,24 @@ public class MQTTHandler implements MqttCallback {
      * @see MqttCallback#messageArrived(String, MqttMessage)
      */
 	public void messageArrived(String topic, MqttMessage message) throws Exception {
-		Logger.consoleLog(String.format("Message arrive for Topic %s: %s", topic, message.toString()));
+		Message arrivedMessage = new Message(message);
+		Logger.consoleLog(String.format("Message arrived for topic %s: %s", topic, arrivedMessage.toString()));
+		
+		findTopic(topic).addMessage(arrivedMessage);
 		
 		App.messageArrived(topic, message);
+	}
+	
+	public static Topic findTopic(String topic) {
+		Topic retTopic = null;
+		
+		for (Topic searchTopic : GlobalVar.addedTopics) {
+			if (searchTopic.getTopic().equals(topic)) {
+				retTopic = searchTopic;
+			}
+		}
+		
+		return retTopic;
 	}
 	
 	public boolean connectionAlive() {
