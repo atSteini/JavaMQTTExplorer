@@ -1,13 +1,12 @@
 package app;
 
-
 import pojo.*;
 import var.*;
+import draw.*;
 
-import com.formdev.flatlaf.intellijthemes.materialthemeuilite.FlatGitHubIJTheme;
+import com.formdev.flatlaf.intellijthemes.FlatCyanLightIJTheme;
 
 import org.eclipse.paho.client.mqttv3.MqttException;
-import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.eclipse.paho.client.mqttv3.MqttPersistenceException;
 import org.eclipse.paho.client.mqttv3.MqttSecurityException;
 
@@ -17,15 +16,19 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
-
+import java.net.ServerSocket;
 import java.util.ArrayList;
 import java.util.Arrays;
 
 import java.awt.EventQueue;
+import java.awt.Toolkit;
+import java.awt.Window;
 import java.awt.event.ActionListener;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
+import java.awt.BorderLayout;
+import java.awt.Dimension;
 
 import javax.swing.JFrame;
 import javax.swing.JPanel;
@@ -51,8 +54,11 @@ import javax.swing.SpinnerNumberModel;
 import javax.swing.UIManager;
 import javax.swing.JSeparator;
 import javax.swing.JList;
-import java.awt.BorderLayout;
 import javax.swing.SwingConstants;
+import javax.swing.event.ChangeListener;
+import javax.swing.event.ChangeEvent;
+import javax.swing.event.ListSelectionListener;
+import javax.swing.event.ListSelectionEvent;
 
 /*
  * @author Florian Steinkellner
@@ -74,9 +80,6 @@ public class App extends JFrame {
 	private JMenu mnFile;
 	private JMenuItem mntmExit;
 	private JTabbedPane tbpData;
-	private JPanel pnlGraph;
-	private JPanel pnlRawData;
-	private JPanel pnlParsed;
 	private JPanel pnlPublish;
 	private JPanel pnlServerSettings;
 	private JLabel lblServer;
@@ -88,30 +91,46 @@ public class App extends JFrame {
 	private JLabel lblPort;
 	private JLabel lblPubTopic;
 	private JLabel lblMessage;
-	private JButton btnPublish;
-	private JButton btnAddTopic;
 	private JLabel lblTopic;
 	private JMenuItem mntmSaveSession;
 	private JMenuItem mntmOpenSession;
+	private JMenuItem mntmClear;
+	private JScrollPane scrlShowTopics;
+	private static JPanel pnlParsed;
+	private static JPanel pnlRawData;
+	private static JPanel pnlGraph;
+	private static JButton btnAddTopic;
+	private static JButton btnPublish;
+	private static JButton btnCreateJSON;
 	private static JPanel pnlShowTopics;
 	private static JList<String> listShowTopics;
 	private static JPanel pnlTopic;
-	public static JLabel lblStatus;
+	public static JTextField txtStatus;
 	public static JPanel pnlStatus;
 	
-	ArrayList<JTextField> inputsServer;
-	ArrayList<JTextField> inputsTopic;
-	ArrayList<JTextField> inputsPublish;
-	ImageIcon iconImage;
-	private JScrollPane scrlShowTopics;
-	private JMenuItem mntmClear;
+	private ArrayList<JTextField> inputsServer;
+	private ArrayList<JTextField> inputsTopic;
+	private ArrayList<JTextField> inputsPublish;
+	private ImageIcon iconImage;
+	private boolean initUI = false, initDraw = false;
+	public static ServerSocket serverSocket;
 	
 	public static void main(String[] args) {
 		EventQueue.invokeLater(new Runnable() {
 			public void run() {
 				try {
+					try {
+				        serverSocket = new ServerSocket(1044);
+				    } catch (IOException e) {
+				        Logger.errorLog("Application " + this.getClass() + " already running!");
+				        Logger.errorLog(e);
+				        
+				        Logger.exitSystem(-1);
+				    }
+					
 					App frame = new App();
 					frame.setVisible(true);
+
 				} catch (Exception e) {
 					Logger.errorLog(e);
 				}
@@ -122,15 +141,33 @@ public class App extends JFrame {
 	public App() {
 		initUI();
 	}
+
+	public static void selectionTopicChanged() {
+		DrawRawData.selectionTopicChanged();
+		DrawParsedData.selectionTopicChanged();
+		DrawGraph.selectionTopicChanged();
+	}
 	
-	public static void messageArrived(String topic, MqttMessage message) {
+	public static void updateData() {
+		DrawRawData.updateData();
+		DrawParsedData.updateData();
+		DrawGraph.updateData();
+	}
+	
+	public static void messageArrived(String topic, Message message) {
 		reloadTopics();
+	}
+
+	public static void connectionLost() {
+		setInterfaceComponents(false);
 	}
 	
 	protected void btnPublishActionPerformed(ActionEvent e) throws MqttPersistenceException, MqttException {
 		Logger.buttonLog(e);
 		
-		GlobalVar.mqttHandler.publish(txtPubTopic.getText(), this.txtPubMessage.getText());
+		if (txtPubTopic.getText().isBlank()) { return; }
+		
+		GlobalVar.mqttHandler.publish(txtPubTopic.getText(), new Message(this.txtPubMessage.getText(), GlobalVar.mqttHandler.getMqttQos()));
 	}
 
 	protected void btnAddTopicActionPerformed(ActionEvent e) throws MqttSecurityException, MqttException {
@@ -154,17 +191,63 @@ public class App extends JFrame {
 						(int) spPort.getValue());
 		
 		if (GlobalVar.mqttHandler.connectionAlive()) {
-			btnAddTopic.setEnabled(true);
-			btnPublish.setEnabled(true);
+			setInterfaceComponents(true);
 			
 			txtClientName.setText(GlobalVar.mqttHandler.getMqttClientName());
 			
 			setServerButton(GlobalVar.CONN_CONNECTED);
-			
-			subscribeToAllTopics();
 		}
 		
-		Logger.consoleLog(GlobalVar.mqttHandler);
+		Logger.infoLog(GlobalVar.mqttHandler);
+	}
+
+	protected void btnCreateJSONActionPerformed(ActionEvent e) {
+		Logger.buttonLog(e);
+	}
+
+	protected void tbpDataStateChanged(ChangeEvent e) {
+		Logger.stateChangeLog(e);
+		
+		if (!initUI) { return; }
+		
+		if (!initDraw) { initDraw(); }
+		
+		GlobalVar.selectedPanel = (int) GlobalVar.drawPanels.get(tbpData.getSelectedComponent().getClass().toString());
+		
+		updateData();
+		
+		Logger.noStatusLog("Selected Panel " + GlobalVar.selectedPanel);
+	}
+	
+	private void initDraw() {
+		try {
+			GlobalVar.drawPanels.put(pnlRawData.getClass().toString(), (int) GlobalVar.PNL_RAW);
+			GlobalVar.drawPanels.put(pnlParsed.getClass().toString(), (int) GlobalVar.PNL_PARSED);
+			GlobalVar.drawPanels.put(pnlGraph.getClass().toString(), (int) GlobalVar.PNL_GRAPH);
+			initDraw = true;
+		} catch (NullPointerException ex) {
+			initDraw = false;
+			Logger.errorLog(ex);
+		}
+	}
+
+	protected void listShowTopicsValueChanged(ListSelectionEvent e) {
+		Logger.selectionChangedLog(e);
+		
+		int newTopic = listShowTopics.getSelectedIndex();
+		Logger.noStatusLog("Selected Index: " + newTopic);
+		
+		if (newTopic != -1 && GlobalVar.selectedTopic != newTopic) {
+			GlobalVar.selectedTopic = newTopic;
+		}
+		
+		selectionTopicChanged();
+	}
+	
+	private static void setInterfaceComponents(boolean b) {
+		btnAddTopic.setEnabled(b);
+		btnCreateJSON.setEnabled(b);
+		btnPublish.setEnabled(b);
 	}
 
 	protected void txtPubMessageKeyReleased(KeyEvent e) {
@@ -230,19 +313,26 @@ public class App extends JFrame {
 	protected void mntmExitActionPerformed(ActionEvent e) {
 		Logger.buttonLog(e);
 		
-		System.exit(0);
+		Logger.exitSystem(0);
 	}
 	
 	private void addTopic(Topic topic) throws MqttSecurityException, MqttException {
 		if (topicExists(topic)) { 
-			Logger.consoleLog(topic.getTopic() + " already exists!");
+			Logger.infoLog(topic.getTopic() + " already exists!");
 			return; 
 		}
 		GlobalVar.addedTopics.add(topic);
 		
-		reloadTopics();
+		/*
+		if (GlobalVar.addedTopics.size() > 0) {
+			GlobalVar.selectedTopic = 0;
+		}
+		*/
 		
-		Logger.consoleLog("Added Topic: " + topic);
+		reloadTopics();
+		subscribeToTopic(topic);
+		
+		Logger.infoLog("Added Topic: " + topic);
 	}
 	
 	private boolean topicExists(Topic topic) {
@@ -259,11 +349,16 @@ public class App extends JFrame {
 		addTopic(new Topic(topic));
 	}
 	
+	private void subscribeToTopic(Topic topic) throws MqttSecurityException, MqttException {
+		if (GlobalVar.mqttHandler == null) { return; }
+		GlobalVar.mqttHandler.subscribeTo(topic);
+	}
+	
 	private void subscribeToAllTopics() throws MqttSecurityException, MqttException {
 		for(Topic topic : GlobalVar.addedTopics) {
-			GlobalVar.mqttHandler.subscribeTo(topic);
+			subscribeToTopic(topic);
 		}
-	}
+	} 
 	
 	private static void reloadTopics(String ... addBefore) {
 		DefaultListModel<String> model = new DefaultListModel<>();
@@ -323,41 +418,41 @@ public class App extends JFrame {
 	private void setPort(int port) {
 		spPort.setValue(port);
 		
-		Logger.consoleLog("Set Port: " + port);
+		Logger.infoLog("Set Port: " + port);
 	}
 
 	private void setClientName(String clientName) {
 		txtClientName.setText(clientName);
 		
-		Logger.consoleLog("Set ClientName: " + clientName);
+		Logger.infoLog("Set ClientName: " + clientName);
 	}
 
 	private void setPassword(String password) {
 		txtPassword.setText(password);
 		
-		Logger.consoleLog("Set Password: " + password);
+		Logger.infoLog("Set Password: " + password);
 	}
 
 	private void setUser(String user) {
 		txtUser.setText(user);
 		
-		Logger.consoleLog("Set User: " + user);
+		Logger.infoLog("Set User: " + user);
 	}
 
 	private void setServer(String server) {
 		txtServer.setText(server);
 		
-		Logger.consoleLog("Set Server: " + server);
+		Logger.infoLog("Set Server: " + server);
 	}
 	
 	private void setTopics(ArrayList<Topic> topics) {
 		GlobalVar.addedTopics = topics;
 		
-		Logger.consoleLog("Set topics: " + topics);
+		Logger.infoLog("Set topics: " + topics);
 	}
 
 	private void loadSession(File file) throws IOException, MqttException {
-		Logger.consoleLog("Loading session: " + file);
+		Logger.infoLog("Loading session: " + file);
 		BufferedReader in = new BufferedReader(new FileReader(file));
 		
 		String line = null;
@@ -379,13 +474,14 @@ public class App extends JFrame {
 		
 		in.close();
 
-		Logger.consoleLog("Done loading session: " + file);
+		Logger.infoLog("Done loading session: " + file);
 		
 		btnSetServerActionPerformed(null);
+		subscribeToAllTopics();
 	}
 	
 	private void saveSessionTo(File file) throws IOException {
-		Logger.consoleLog("Saving session: " + file);
+		Logger.infoLog("Saving session: " + file);
 		
 		BufferedWriter out = new BufferedWriter(new FileWriter(file));
 		
@@ -408,7 +504,7 @@ public class App extends JFrame {
 		out.flush();
 		out.close();
 		
-		Logger.consoleLog("Done saving session: " + file);
+		Logger.infoLog("Done saving session: " + file);
 	}
 	
 	public File showSessionFileChooser(String title, boolean isSave) {
@@ -417,7 +513,7 @@ public class App extends JFrame {
 		
 		JFileChooser fileChooser = new JFileChooser();
 
-		Logger.consoleLog("Showing FileChooser [" + title + "] - isSave: " + isSave);
+		Logger.noStatusLog("Showing FileChooser [" + title + "] - isSave: " + isSave);
 		
 		fileChooser.setDialogTitle(title);   
 		
@@ -436,12 +532,12 @@ public class App extends JFrame {
 		File file = fileChooser.getSelectedFile();
 		if (userSelection == JFileChooser.APPROVE_OPTION) {
 			if (!file.getAbsolutePath().toLowerCase().endsWith("." + extension)) {
-				Logger.consoleLog(file.getAbsoluteFile() + " has no valid extension. Adding " + extension);
+				Logger.noStatusLog(file.getAbsoluteFile() + " has no valid extension. Adding " + extension);
 				
 				file = new File(file.getAbsolutePath() + "." + extension);
 			}
 			
-			Logger.consoleLog("FileChooser [" + title + "] returned " + file);
+			Logger.infoLog("FileChooser [" + title + "] returned " + file);
 			return file;
 		}
 		
@@ -457,11 +553,11 @@ public class App extends JFrame {
 		setTopics(new ArrayList<Topic>());
 		reloadTopics();
 		
-		Logger.consoleLog("Cleared session!");
+		Logger.infoLog("Cleared session!");
 	}
 	
 	public void setIconImage(String path) {
-		Logger.consoleLog("Setting Icon Image: " + path);
+		Logger.noStatusLog("Setting Icon Image: " + path);
 		
 		iconImage = new ImageIcon(path);
 		
@@ -503,26 +599,34 @@ public class App extends JFrame {
 	}
 
 	public static void setStatusBar(Object o) {
-		if (o == null || lblStatus == null || pnlStatus == null) { return; }
+		if (o == null || txtStatus == null || pnlStatus == null) { return; }
 		
-		lblStatus.setText(o.toString());
+		txtStatus.setText(o.toString());
 		pnlStatus.repaint();
+	}
+	
+	public static void centerWindow(Window frame) {
+	    Dimension dimension = Toolkit.getDefaultToolkit().getScreenSize();
+	    int x = (int) ((dimension.getWidth() - frame.getWidth()) / 2);
+	    int y = (int) ((dimension.getHeight() - frame.getHeight()) / 2);
+	    frame.setLocation(x, y);
 	}
 	
 	/**
 	 * Initializes all the UI components.
 	 */
 	private void initUI() {
-		Logger.consoleLog("Installing LookAndFeel...");
-		FlatGitHubIJTheme.install();
-		Logger.consoleLog("Installed " + UIManager.getLookAndFeel());
+		Logger.noStatusLog("Installing LookAndFeel...");
+		FlatCyanLightIJTheme.install();
+		Logger.noStatusLog("Installed " + UIManager.getLookAndFeel());
 		
 		setIconImage(GlobalVar.iconImagePath);
 		
-		Logger.consoleLog("Loading UI Components...");
+		Logger.noStatusLog("Loading UI Components...");
 		setTitle("MQTT Explorer");
 		setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-		setBounds(100, 100, 1000, 700);
+		setBounds(GlobalVar.WINDOW_BOUNDS);
+		centerWindow(this);
 		
 		menuBar = new JMenuBar();
 		setJMenuBar(menuBar);
@@ -577,46 +681,21 @@ public class App extends JFrame {
 		setContentPane(background);
 		
 		tbpData = new JTabbedPane(JTabbedPane.TOP);
+		tbpData.addChangeListener(new ChangeListener() {
+			public void stateChanged(ChangeEvent e) {
+				tbpDataStateChanged(e);
+			}
+		});
 		
-		pnlRawData = new JPanel();
+		pnlRawData = new DrawRawData();
 		tbpData.addTab("Raw Data", null, pnlRawData, null);
-		GroupLayout grpLoRawData = new GroupLayout(pnlRawData);
-		grpLoRawData.setHorizontalGroup(
-			grpLoRawData.createParallelGroup(Alignment.LEADING)
-				.addGap(0, 496, Short.MAX_VALUE)
-		);
-		grpLoRawData.setVerticalGroup(
-			grpLoRawData.createParallelGroup(Alignment.LEADING)
-				.addGap(0, 342, Short.MAX_VALUE)
-		);
-		pnlRawData.setLayout(grpLoRawData);
 		
-		pnlParsed = new JPanel();
+		pnlParsed = new DrawParsedData();
 		tbpData.addTab("Parsed Data", null, pnlParsed, null);
-		GroupLayout grpLoParsed = new GroupLayout(pnlParsed);
-		grpLoParsed.setHorizontalGroup(
-			grpLoParsed.createParallelGroup(Alignment.LEADING)
-				.addGap(0, 496, Short.MAX_VALUE)
-		);
-		grpLoParsed.setVerticalGroup(
-			grpLoParsed.createParallelGroup(Alignment.LEADING)
-				.addGap(0, 342, Short.MAX_VALUE)
-		);
-		pnlParsed.setLayout(grpLoParsed);
 		
-		pnlGraph = new JPanel();
+		pnlGraph = new DrawGraph();
 		tbpData.addTab("Graph", null, pnlGraph, null);
-		GroupLayout grLoGraph = new GroupLayout(pnlGraph);
-		grLoGraph.setHorizontalGroup(
-			grLoGraph.createParallelGroup(Alignment.LEADING)
-				.addGap(0, 496, Short.MAX_VALUE)
-		);
-		grLoGraph.setVerticalGroup(
-			grLoGraph.createParallelGroup(Alignment.LEADING)
-				.addGap(0, 342, Short.MAX_VALUE)
-		);
-		pnlGraph.setLayout(grLoGraph);
-		
+
 		pnlTopic = new JPanel();
 		pnlTopic.setBorder(new TitledBorder(null, "Topic", TitledBorder.LEADING, TitledBorder.TOP, null, null));
 		
@@ -634,36 +713,46 @@ public class App extends JFrame {
 		grpLoBackground.setHorizontalGroup(
 			grpLoBackground.createParallelGroup(Alignment.TRAILING)
 				.addGroup(grpLoBackground.createSequentialGroup()
-					.addGroup(grpLoBackground.createParallelGroup(Alignment.LEADING)
-						.addComponent(pnlShowTopics, GroupLayout.DEFAULT_SIZE, GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-						.addComponent(tbpData, GroupLayout.DEFAULT_SIZE, 588, Short.MAX_VALUE))
-					.addGap(18)
-					.addGroup(grpLoBackground.createParallelGroup(Alignment.LEADING)
-						.addComponent(pnlTopic, 0, 0, Short.MAX_VALUE)
-						.addComponent(pnlServerSettings, GroupLayout.DEFAULT_SIZE, GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-						.addComponent(pnlPublish, 0, 0, Short.MAX_VALUE))
-					.addGap(8))
-				.addGroup(grpLoBackground.createSequentialGroup()
 					.addContainerGap()
-					.addComponent(pnlStatus, GroupLayout.DEFAULT_SIZE, 968, Short.MAX_VALUE)
-					.addContainerGap())
+					.addGroup(grpLoBackground.createParallelGroup(Alignment.TRAILING)
+						.addGroup(grpLoBackground.createSequentialGroup()
+							.addGroup(grpLoBackground.createParallelGroup(Alignment.TRAILING)
+								.addComponent(tbpData, GroupLayout.DEFAULT_SIZE, 578, Short.MAX_VALUE)
+								.addComponent(pnlShowTopics, GroupLayout.DEFAULT_SIZE, 578, Short.MAX_VALUE))
+							.addGap(18)
+							.addGroup(grpLoBackground.createParallelGroup(Alignment.LEADING)
+								.addGroup(grpLoBackground.createSequentialGroup()
+									.addComponent(pnlPublish, 0, 0, Short.MAX_VALUE)
+									.addContainerGap())
+								.addGroup(grpLoBackground.createSequentialGroup()
+									.addComponent(pnlServerSettings, GroupLayout.DEFAULT_SIZE, GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+									.addGap(8))
+								.addGroup(grpLoBackground.createSequentialGroup()
+									.addComponent(pnlTopic, 0, 0, Short.MAX_VALUE)
+									.addContainerGap())))
+						.addGroup(grpLoBackground.createSequentialGroup()
+							.addComponent(pnlStatus, GroupLayout.DEFAULT_SIZE, 956, Short.MAX_VALUE)
+							.addContainerGap())))
 		);
 		grpLoBackground.setVerticalGroup(
 			grpLoBackground.createParallelGroup(Alignment.LEADING)
 				.addGroup(grpLoBackground.createSequentialGroup()
 					.addGroup(grpLoBackground.createParallelGroup(Alignment.LEADING)
 						.addGroup(grpLoBackground.createSequentialGroup()
-							.addComponent(pnlShowTopics, GroupLayout.PREFERRED_SIZE, 266, GroupLayout.PREFERRED_SIZE)
-							.addPreferredGap(ComponentPlacement.UNRELATED)
-							.addGroup(grpLoBackground.createParallelGroup(Alignment.BASELINE)
-								.addComponent(tbpData, GroupLayout.DEFAULT_SIZE, 327, Short.MAX_VALUE)
+							.addComponent(pnlShowTopics, GroupLayout.PREFERRED_SIZE, 212, GroupLayout.PREFERRED_SIZE)
+							.addGroup(grpLoBackground.createParallelGroup(Alignment.LEADING)
 								.addGroup(grpLoBackground.createSequentialGroup()
+									.addGap(61)
 									.addComponent(pnlTopic, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE)
-									.addGap(14)
-									.addComponent(pnlPublish, GroupLayout.PREFERRED_SIZE, 132, GroupLayout.PREFERRED_SIZE))))
+									.addPreferredGap(ComponentPlacement.RELATED)
+									.addComponent(pnlPublish, GroupLayout.PREFERRED_SIZE, 165, GroupLayout.PREFERRED_SIZE))
+								.addGroup(grpLoBackground.createSequentialGroup()
+									.addPreferredGap(ComponentPlacement.UNRELATED)
+									.addComponent(tbpData, GroupLayout.PREFERRED_SIZE, 364, GroupLayout.PREFERRED_SIZE))))
 						.addComponent(pnlServerSettings, GroupLayout.PREFERRED_SIZE, 267, GroupLayout.PREFERRED_SIZE))
 					.addPreferredGap(ComponentPlacement.RELATED)
-					.addComponent(pnlStatus, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE))
+					.addComponent(pnlStatus, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE)
+					.addContainerGap())
 		);
 		pnlShowTopics.setLayout(new BorderLayout(0, 0));
 		
@@ -671,12 +760,29 @@ public class App extends JFrame {
 		pnlShowTopics.add(scrlShowTopics, BorderLayout.CENTER);
 		
 		listShowTopics = new JList<>();
-		listShowTopics.setBorder(null);
+		listShowTopics.addListSelectionListener(new ListSelectionListener() {
+			public void valueChanged(ListSelectionEvent e) {
+				listShowTopicsValueChanged(e);
+			}
+		});
+		listShowTopics.setBorder(new EmptyBorder(0, 0, 0, 0));
 		scrlShowTopics.setViewportView(listShowTopics);
 		
-		lblStatus = new JLabel("no connection");
-		lblStatus.setHorizontalAlignment(SwingConstants.CENTER);
-		pnlStatus.add(lblStatus);
+		txtStatus = new JTextField("no connection");
+		txtStatus.setEditable(false);
+		txtStatus.setHorizontalAlignment(SwingConstants.CENTER);
+		GroupLayout gl_pnlStatus = new GroupLayout(pnlStatus);
+		gl_pnlStatus.setHorizontalGroup(
+			gl_pnlStatus.createParallelGroup(Alignment.TRAILING)
+				.addComponent(txtStatus, GroupLayout.DEFAULT_SIZE, 956, Short.MAX_VALUE)
+		);
+		gl_pnlStatus.setVerticalGroup(
+			gl_pnlStatus.createParallelGroup(Alignment.TRAILING)
+				.addGroup(Alignment.LEADING, gl_pnlStatus.createSequentialGroup()
+					.addComponent(txtStatus, GroupLayout.DEFAULT_SIZE, 29, Short.MAX_VALUE)
+					.addContainerGap())
+		);
+		pnlStatus.setLayout(gl_pnlStatus);
 		
 		lblServer = new JLabel("Server");
 		
@@ -727,7 +833,6 @@ public class App extends JFrame {
 		lblClientName = new JLabel("Client Name");
 		
 		btnSetServer = new JButton("Connect");
-		btnSetServer.setEnabled(false);
 		btnSetServer.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {
 				try {
@@ -758,10 +863,10 @@ public class App extends JFrame {
 							.addPreferredGap(ComponentPlacement.RELATED)
 							.addGroup(grpLoServerSettings.createParallelGroup(Alignment.LEADING)
 								.addComponent(txtServer, Alignment.TRAILING, GroupLayout.DEFAULT_SIZE, 240, Short.MAX_VALUE)
-								.addComponent(txtUser, Alignment.TRAILING)
-								.addComponent(txtPassword, Alignment.TRAILING)
-								.addComponent(txtClientName, Alignment.TRAILING)
-								.addComponent(spPort)))
+								.addComponent(txtUser, 240, 240, Short.MAX_VALUE)
+								.addComponent(txtPassword, 240, 240, Short.MAX_VALUE)
+								.addComponent(txtClientName, Alignment.TRAILING, GroupLayout.DEFAULT_SIZE, 240, Short.MAX_VALUE)
+								.addComponent(spPort, GroupLayout.DEFAULT_SIZE, 240, Short.MAX_VALUE)))
 						.addComponent(btnSetServer, GroupLayout.DEFAULT_SIZE, 330, Short.MAX_VALUE))
 					.addContainerGap())
 		);
@@ -833,22 +938,34 @@ public class App extends JFrame {
 				}
 			}
 		});
+		
+		btnCreateJSON = new JButton("Create JSON Object");
+		btnCreateJSON.addActionListener(new ActionListener() {
+			public void actionPerformed(ActionEvent e) {
+				btnCreateJSONActionPerformed(e);
+			}
+		});
+		btnCreateJSON.setEnabled(false);
 		GroupLayout grpLoPublish = new GroupLayout(pnlPublish);
 		grpLoPublish.setHorizontalGroup(
 			grpLoPublish.createParallelGroup(Alignment.LEADING)
 				.addGroup(grpLoPublish.createSequentialGroup()
 					.addContainerGap()
 					.addGroup(grpLoPublish.createParallelGroup(Alignment.LEADING)
-						.addComponent(btnPublish, GroupLayout.DEFAULT_SIZE, 330, Short.MAX_VALUE)
-						.addGroup(Alignment.TRAILING, grpLoPublish.createSequentialGroup()
+						.addGroup(grpLoPublish.createSequentialGroup()
 							.addGroup(grpLoPublish.createParallelGroup(Alignment.LEADING, false)
 								.addComponent(lblMessage, GroupLayout.DEFAULT_SIZE, 81, Short.MAX_VALUE)
 								.addComponent(lblPubTopic, GroupLayout.DEFAULT_SIZE, GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
 							.addGap(16)
+							.addGroup(grpLoPublish.createParallelGroup(Alignment.LEADING)
+								.addComponent(txtPubTopic, GroupLayout.DEFAULT_SIZE, 233, Short.MAX_VALUE)
+								.addComponent(txtPubMessage, GroupLayout.DEFAULT_SIZE, 233, Short.MAX_VALUE))
+							.addContainerGap())
+						.addGroup(Alignment.TRAILING, grpLoPublish.createSequentialGroup()
 							.addGroup(grpLoPublish.createParallelGroup(Alignment.TRAILING)
-								.addComponent(txtPubMessage)
-								.addComponent(txtPubTopic, GroupLayout.DEFAULT_SIZE, 239, Short.MAX_VALUE))))
-					.addGap(4))
+								.addComponent(btnCreateJSON, Alignment.LEADING, GroupLayout.DEFAULT_SIZE, 330, Short.MAX_VALUE)
+								.addComponent(btnPublish, GroupLayout.DEFAULT_SIZE, 330, Short.MAX_VALUE))
+							.addContainerGap())))
 		);
 		grpLoPublish.setVerticalGroup(
 			grpLoPublish.createParallelGroup(Alignment.LEADING)
@@ -861,9 +978,11 @@ public class App extends JFrame {
 					.addGroup(grpLoPublish.createParallelGroup(Alignment.BASELINE)
 						.addComponent(txtPubMessage, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE)
 						.addComponent(lblMessage))
-					.addPreferredGap(ComponentPlacement.UNRELATED)
+					.addPreferredGap(ComponentPlacement.RELATED, 20, Short.MAX_VALUE)
+					.addComponent(btnCreateJSON)
+					.addPreferredGap(ComponentPlacement.RELATED)
 					.addComponent(btnPublish)
-					.addContainerGap(18, Short.MAX_VALUE))
+					.addContainerGap())
 		);
 		pnlPublish.setLayout(grpLoPublish);
 		
@@ -896,17 +1015,17 @@ public class App extends JFrame {
 			grpLoTopic.createParallelGroup(Alignment.TRAILING)
 				.addGroup(grpLoTopic.createSequentialGroup()
 					.addContainerGap()
-					.addGroup(grpLoTopic.createParallelGroup(Alignment.LEADING)
-						.addGroup(Alignment.TRAILING, grpLoTopic.createSequentialGroup()
+					.addGroup(grpLoTopic.createParallelGroup(Alignment.TRAILING)
+						.addComponent(btnAddTopic, GroupLayout.DEFAULT_SIZE, 330, Short.MAX_VALUE)
+						.addGroup(grpLoTopic.createSequentialGroup()
 							.addComponent(lblTopic, GroupLayout.PREFERRED_SIZE, 45, GroupLayout.PREFERRED_SIZE)
 							.addGap(45)
-							.addComponent(txtTopic, GroupLayout.DEFAULT_SIZE, 240, Short.MAX_VALUE))
-						.addComponent(btnAddTopic, Alignment.TRAILING, GroupLayout.DEFAULT_SIZE, 330, Short.MAX_VALUE))
+							.addComponent(txtTopic, GroupLayout.DEFAULT_SIZE, 240, Short.MAX_VALUE)))
 					.addContainerGap())
 		);
 		grpLoTopic.setVerticalGroup(
-			grpLoTopic.createParallelGroup(Alignment.TRAILING)
-				.addGroup(Alignment.LEADING, grpLoTopic.createSequentialGroup()
+			grpLoTopic.createParallelGroup(Alignment.LEADING)
+				.addGroup(grpLoTopic.createSequentialGroup()
 					.addContainerGap()
 					.addGroup(grpLoTopic.createParallelGroup(Alignment.BASELINE)
 						.addComponent(txtTopic, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE)
@@ -927,8 +1046,13 @@ public class App extends JFrame {
 		inputsPublish = new ArrayList<JTextField>(
 			      Arrays.asList(txtPubTopic, txtPubMessage));
 		
+		initDraw();
 		setServerButton(GlobalVar.CONN_DISCONNECTED);
 		
-		Logger.consoleLog("Done loading UI Components\n");
+		repaint();
+		
+		Logger.noStatusLog("Done loading UI Components\n");
+		Logger.statusLog("no connection");
+		initUI = true;
 	}
 }

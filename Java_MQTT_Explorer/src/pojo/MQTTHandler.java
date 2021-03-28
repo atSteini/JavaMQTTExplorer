@@ -65,14 +65,12 @@ public class MQTTHandler implements MqttCallback {
 	 * @throws MqttPersistenceException
 	 * @throws MqttException
 	 */
-	public void publish(String topic, String message) throws MqttPersistenceException, MqttException {
+	public void publish(String topic, Message message) throws MqttPersistenceException, MqttException {
 		if (!connectionAlive()) { return; }
 		
-		MqttMessage mqttMsg = new MqttMessage(message.getBytes());
-		mqttMsg.setQos(mqttQos);
-		client.publish(topic, mqttMsg);
+		client.publish(topic, message.toMqttMessage());
 		
-		Logger.consoleLog("Published message: " + message);
+		Logger.infoLog("Published message: " + message);
 	}
 	
 	/**
@@ -87,10 +85,10 @@ public class MQTTHandler implements MqttCallback {
 		client.setCallback(this);
 		
 		MqttConnectOptions options = setUpConnectionOptions();
-		Logger.consoleLog("Connecting to broker: " + broker);
+		Logger.infoLog("Connecting to broker: " + broker);
 
 		client.connect(options);
-		Logger.consoleLog("Connected to broker: " + broker);
+		Logger.infoLog("Connected to broker: " + broker);
 		
 		return connectionAlive();
 	}
@@ -128,7 +126,7 @@ public class MQTTHandler implements MqttCallback {
 	public void subscribeTo(Topic topic) throws MqttSecurityException, MqttException {
 		if (!connectionAlive()) { return; }
 		
-		Logger.consoleLog("Subscribing to " + topic + " [QOS:  " + this.mqttQos + "]");
+		Logger.infoLog("Subscribing to " + topic + " [QOS:  " + this.mqttQos + "]");
 		
 		client.subscribe(topic.getTopic(), this.mqttQos);
 	}
@@ -137,6 +135,8 @@ public class MQTTHandler implements MqttCallback {
      * @see MqttCallback#connectionLost(Throwable)
      */
 	public void connectionLost(Throwable t) {
+		App.connectionLost();
+		
 		Logger.errorLog("Connection lost:");
 		Logger.errorLog(t);
 	}
@@ -145,7 +145,7 @@ public class MQTTHandler implements MqttCallback {
      * @see MqttCallback#deliveryComplete(IMqttDeliveryToken)
      */
 	public void deliveryComplete(IMqttDeliveryToken token) {
-		Logger.consoleLog("Message delivered successfully " + token.toString());
+		Logger.infoLog("Message delivered successfully with Id: " + token.getMessageId());
 	}
 
 	/**
@@ -153,11 +153,14 @@ public class MQTTHandler implements MqttCallback {
      */
 	public void messageArrived(String topic, MqttMessage message) throws Exception {
 		Message arrivedMessage = new Message(message);
-		Logger.consoleLog(String.format("Message arrived for topic %s: %s", topic, arrivedMessage.toString()));
+		Logger.infoLog(String.format("Message arrived for topic %s: %s", topic, arrivedMessage.toString()));
 		
+		GlobalVar.latestMessage = arrivedMessage;
 		findTopic(topic).addMessage(arrivedMessage);
 		
-		App.messageArrived(topic, message);
+		App.updateData();
+
+		App.messageArrived(topic, arrivedMessage);
 	}
 	
 	public static Topic findTopic(String topic) {

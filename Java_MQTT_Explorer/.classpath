@@ -9,5 +9,6 @@
 	<classpathentry kind="lib" path="lib/flatlaf-1.0.jar"/>
 	<classpathentry kind="lib" path="lib/flatlaf-intellij-themes-1.0.jar"/>
 	<classpathentry kind="lib" path="lib/org.eclipse.paho.client.mqttv3-1.2.5.jar"/>
+	<classpathentry kind="lib" path="lib/gson-2.8.6.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>
