@@ -158,7 +158,7 @@ public class MQTTHandler implements MqttCallback {
 		GlobalVar.latestMessage = arrivedMessage;
 		findTopic(topic).addMessage(arrivedMessage);
 		
-		App.updateData();
+		App.tabSelectionChanged();
 
 		App.messageArrived(topic, arrivedMessage);
 	}

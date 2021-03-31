@@ -190,7 +190,7 @@ public class DrawRawData extends JPanel {
 					selectedTopic.setSelectedMessageIndex(index);
 
 					setTxtIndex(index + 1 + "");
-					updateData();
+					tabSelectionChanged();
 					
 					Logger.noStatusLog("Set MessageIndex to " + index);
 					
@@ -206,7 +206,7 @@ public class DrawRawData extends JPanel {
 		Logger.infoLog("Froze data input");
 		
 		togglePause();
-		updateData();
+		tabSelectionChanged();
 	}
 	
 	private void togglePause() {
@@ -225,15 +225,15 @@ public class DrawRawData extends JPanel {
 
 	protected void btnPreviousActionPerformed(ActionEvent e) {
 		getSelectedTopic().selectPrevious();
-		updateData();
+		tabSelectionChanged();
 	}
 
 	protected void btnNextActionPerformed(ActionEvent e) {
 		getSelectedTopic().selectNext();
-		updateData();
+		tabSelectionChanged();
 	}
 
-	public static void updateData() {
+	public static void tabSelectionChanged() {
 		togglePauseButton();
 		if (GlobalVar.selectedPanel != GlobalVar.PNL_RAW || GlobalVar.dataPaused) { return; }
 		
@@ -266,7 +266,7 @@ public class DrawRawData extends JPanel {
 	}
 
 	public static void selectionTopicChanged() {
-		updateData();
+		tabSelectionChanged();
 	}
 	
 	private static void setValues(String id, String qos, String payload, String index) {

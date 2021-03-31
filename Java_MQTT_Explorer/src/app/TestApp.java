@@ -11,9 +11,13 @@ import pojo.Logger;
 public class TestApp {
 
 	public static void main(String[] args) {
-		String topic = "htl/4CHEL/Labor/Steinkellner/";
+		//String topic = "htl/4CHEL/Labor/Steinkellner/";
 		
-		System.out.println(removeLast(topic, "/"));
+		//System.out.println(removeLast(topic, "/"));
+		
+		for(int i = 0; i < 1000; i++) {
+			System.out.println("[SMAP-" + i + "]");
+		}
 	}
 	
 	private static String removeLast(String s, String last) {

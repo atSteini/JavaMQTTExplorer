@@ -7,7 +7,7 @@ import com.google.gson.JsonSyntaxException;
 
 /*
  * @author Florian Steinkellner
- * @date March 22, 2021
+ * @date March 30, 2021
  */
 public class Message {
 	String message;
@@ -20,6 +20,8 @@ public class Message {
 		this.message = message;
 		this.qos = qos;
 		this.payload = message.getBytes();
+		
+		this.parsedMessage = parseJSONToMessageValue(getMessage());
 	}
 	
 	public Message(MqttMessage message) {

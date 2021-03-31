@@ -21,7 +21,7 @@ import java.awt.event.KeyAdapter;
 
 /*
  * @author Florian Steinkellner
- * @date March 22, 2021
+ * @date March 30, 2021
  */
 public class DrawParsedData extends JPanel {
 	private static final long serialVersionUID = 1L;
@@ -103,29 +103,29 @@ public class DrawParsedData extends JPanel {
 			groupLayout.createParallelGroup(Alignment.TRAILING)
 				.addGroup(groupLayout.createSequentialGroup()
 					.addContainerGap()
-					.addGroup(groupLayout.createParallelGroup(Alignment.TRAILING)
-						.addComponent(scrlPayload, Alignment.LEADING, GroupLayout.DEFAULT_SIZE, 430, Short.MAX_VALUE)
-						.addGroup(Alignment.LEADING, groupLayout.createSequentialGroup()
+					.addGroup(groupLayout.createParallelGroup(Alignment.LEADING)
+						.addComponent(scrlPayload, GroupLayout.DEFAULT_SIZE, 430, Short.MAX_VALUE)
+						.addGroup(groupLayout.createSequentialGroup()
 							.addComponent(btnPrevious, GroupLayout.DEFAULT_SIZE, 100, Short.MAX_VALUE)
 							.addGap(18)
 							.addComponent(txtIndex, GroupLayout.DEFAULT_SIZE, 194, Short.MAX_VALUE)
 							.addGap(18)
 							.addComponent(btnNext, GroupLayout.DEFAULT_SIZE, 100, Short.MAX_VALUE))
-						.addGroup(Alignment.LEADING, groupLayout.createSequentialGroup()
+						.addGroup(groupLayout.createSequentialGroup()
 							.addComponent(lblSelectedTopic)
 							.addGap(18)
 							.addComponent(txtSelectedTopic, GroupLayout.DEFAULT_SIZE, 345, Short.MAX_VALUE))
-						.addGroup(Alignment.LEADING, groupLayout.createSequentialGroup()
+						.addGroup(groupLayout.createSequentialGroup()
 							.addComponent(lblId, GroupLayout.PREFERRED_SIZE, 45, GroupLayout.PREFERRED_SIZE)
 							.addPreferredGap(ComponentPlacement.RELATED)
-							.addComponent(txtID, GroupLayout.DEFAULT_SIZE, 100, Short.MAX_VALUE)
+							.addComponent(txtID, GroupLayout.DEFAULT_SIZE, 75, Short.MAX_VALUE)
 							.addGap(46)
 							.addComponent(lblQOS, GroupLayout.PREFERRED_SIZE, 45, GroupLayout.PREFERRED_SIZE)
 							.addGap(18)
-							.addComponent(txtQOS, GroupLayout.DEFAULT_SIZE, 100, Short.MAX_VALUE)
+							.addComponent(txtQOS, GroupLayout.DEFAULT_SIZE, 74, Short.MAX_VALUE)
 							.addGap(45)
 							.addComponent(btnPause, GroupLayout.PREFERRED_SIZE, 78, GroupLayout.PREFERRED_SIZE))
-						.addComponent(lblPayload, Alignment.LEADING, GroupLayout.PREFERRED_SIZE, 45, GroupLayout.PREFERRED_SIZE))
+						.addComponent(lblPayload, GroupLayout.PREFERRED_SIZE, 45, GroupLayout.PREFERRED_SIZE))
 					.addContainerGap())
 		);
 		groupLayout.setVerticalGroup(
@@ -145,14 +145,14 @@ public class DrawParsedData extends JPanel {
 					.addGap(18)
 					.addComponent(lblPayload)
 					.addPreferredGap(ComponentPlacement.RELATED)
-					.addComponent(scrlPayload, GroupLayout.PREFERRED_SIZE, 157, GroupLayout.PREFERRED_SIZE)
+					.addComponent(scrlPayload, GroupLayout.DEFAULT_SIZE, 160, Short.MAX_VALUE)
 					.addPreferredGap(ComponentPlacement.UNRELATED)
 					.addGroup(groupLayout.createParallelGroup(Alignment.TRAILING)
 						.addGroup(groupLayout.createParallelGroup(Alignment.BASELINE)
 							.addComponent(btnNext)
 							.addComponent(txtIndex, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE))
 						.addComponent(btnPrevious))
-					.addContainerGap())
+					.addGap(7))
 		);
 		
 		tarPayload = new JTextArea();
@@ -190,7 +190,7 @@ public class DrawParsedData extends JPanel {
 					selectedTopic.setSelectedMessageIndex(index);
 
 					setTxtIndex(index + 1 + "");
-					updateData();
+					tabSelectionChanged();
 					
 					Logger.noStatusLog("Set MessageIndex to " + index);
 					
@@ -206,7 +206,7 @@ public class DrawParsedData extends JPanel {
 		Logger.infoLog("Froze data input");
 		
 		togglePause();
-		updateData();
+		tabSelectionChanged();
 	}
 	
 	private void togglePause() {
@@ -225,15 +225,15 @@ public class DrawParsedData extends JPanel {
 
 	protected void btnPreviousActionPerformed(ActionEvent e) {
 		getSelectedTopic().selectPrevious();
-		updateData();
+		tabSelectionChanged();
 	}
 
 	protected void btnNextActionPerformed(ActionEvent e) {
 		getSelectedTopic().selectNext();
-		updateData();
+		tabSelectionChanged();
 	}
 
-	public static void updateData() {
+	public static void tabSelectionChanged() {
 		togglePauseButton();
 		if (GlobalVar.selectedPanel != GlobalVar.PNL_PARSED || GlobalVar.dataPaused) { return; }
 		
@@ -258,15 +258,34 @@ public class DrawParsedData extends JPanel {
 			txtIndex.setEnabled(true);
 		}
 		
+		String parsedMessageString = "Could not parse Message as JSON.";
+		MessageValue parsedMessage = selectedMessage.getParsedMessage();
+		
+		if (parsedMessage != null) {
+			String parsedDoubleString = "Could not parse Value to Double.";
+			Double parsedDouble = parsedMessage.getValueDouble();
+			if (parsedDouble != Double.MIN_VALUE) {
+				parsedDoubleString = String.format("%.5f", parsedDouble);
+			}
+			
+			parsedMessageString = String.format(
+								"Name: %s\nValue: %s\nParsed Value: %s\nUnit: %s\nAddition: %s",
+								parsedMessage.getName(),
+								parsedMessage.getValue(),
+								parsedDoubleString,
+								parsedMessage.getUnit(),
+								parsedMessage.getAddition());
+		}
+		
 		Logger.noStatusLog("Got selected message: " + selectedMessage.toString());
 		setValues(	Integer.toString(selectedMessage.getId()),
 					Integer.toString(selectedMessage.getQos()),
-					selectedMessage.getMessage(),
+					parsedMessageString,
 					Integer.toString(getSelectedTopic().getSelectedMessageIndex() + 1));
 	}
 
 	public static void selectionTopicChanged() {
-		updateData();
+		tabSelectionChanged();
 	}
 	
 	private static void setValues(String id, String qos, String payload, String index) {

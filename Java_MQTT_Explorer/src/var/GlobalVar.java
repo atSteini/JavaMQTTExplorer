@@ -1,5 +1,6 @@
 package var;
 
+import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Rectangle;
 import java.util.ArrayList;
@@ -14,6 +15,10 @@ import pojo.*;
 public class GlobalVar {
 	//Final Variables (Only to be changed here!)
 	public static final Rectangle WINDOW_BOUNDS = new Rectangle(100, 100, 1000, 700);
+	public static final Dimension 
+							MINIMUM_BOUNDS = new Dimension(830, 660),
+							JSON_MINIMUM_BOUNDS = new Dimension(350, 250);
+	
 	public static final Font txtFieldFont = new Font("Monospaced", Font.PLAIN, 12);
 	
 	public static final String iconImagePath = "icon/icon_logo_mqtt_2.png";

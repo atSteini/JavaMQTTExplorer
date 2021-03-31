@@ -21,14 +21,12 @@ import java.util.ArrayList;
 import java.util.Arrays;
 
 import java.awt.EventQueue;
-import java.awt.Toolkit;
 import java.awt.Window;
 import java.awt.event.ActionListener;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.awt.BorderLayout;
-import java.awt.Dimension;
 
 import javax.swing.JFrame;
 import javax.swing.JPanel;
@@ -43,6 +41,7 @@ import javax.swing.JMenuBar;
 import javax.swing.JLabel;
 import javax.swing.JTextField;
 import javax.swing.LayoutStyle.ComponentPlacement;
+import javax.swing.LookAndFeel;
 import javax.swing.JButton;
 import javax.swing.JFileChooser;
 import javax.swing.JMenu;
@@ -98,7 +97,6 @@ public class App extends JFrame {
 	private JScrollPane scrlShowTopics;
 	private static JPanel pnlParsed;
 	private static JPanel pnlRawData;
-	private static JPanel pnlGraph;
 	private static JButton btnAddTopic;
 	private static JButton btnPublish;
 	private static JButton btnCreateJSON;
@@ -114,6 +112,7 @@ public class App extends JFrame {
 	private ImageIcon iconImage;
 	private boolean initUI = false, initDraw = false;
 	public static ServerSocket serverSocket;
+	private JFrame createJSON = null;
 	
 	public static void main(String[] args) {
 		EventQueue.invokeLater(new Runnable() {
@@ -142,16 +141,28 @@ public class App extends JFrame {
 		initUI();
 	}
 
+	public void insertValuesJSON(String JSON) {
+		this.txtPubMessage.setText(JSON);
+	}
+
+	public void closeJSONCreator() {
+		this.createJSON = null;
+	}
+	
+	public static LookAndFeel getLookAndFeel() {
+		return UIManager.getLookAndFeel();
+	}
+	
 	public static void selectionTopicChanged() {
 		DrawRawData.selectionTopicChanged();
 		DrawParsedData.selectionTopicChanged();
-		DrawGraph.selectionTopicChanged();
+		//DrawGraph.selectionTopicChanged();
 	}
 	
-	public static void updateData() {
-		DrawRawData.updateData();
-		DrawParsedData.updateData();
-		DrawGraph.updateData();
+	public static void tabSelectionChanged() {
+		DrawRawData.tabSelectionChanged();
+		DrawParsedData.tabSelectionChanged();
+		//DrawGraph.tabSelectionChanged();
 	}
 	
 	public static void messageArrived(String topic, Message message) {
@@ -203,6 +214,19 @@ public class App extends JFrame {
 
 	protected void btnCreateJSONActionPerformed(ActionEvent e) {
 		Logger.buttonLog(e);
+		
+		if (createJSON != null) {
+			Logger.noStatusLog("CreateJSON is already open.");
+			createJSON.toFront();
+			createJSON.repaint();
+			this.repaint();
+			
+			return;
+		}
+
+		Logger.noStatusLog("Opening FrmCreateJSON...");
+		createJSON = new FrmCreateJSON(this);
+		createJSON.setVisible(true);
 	}
 
 	protected void tbpDataStateChanged(ChangeEvent e) {
@@ -210,20 +234,18 @@ public class App extends JFrame {
 		
 		if (!initUI) { return; }
 		
-		if (!initDraw) { initDraw(); }
+		if (!initDraw) { initDrawPanelsMap(); }
 		
 		GlobalVar.selectedPanel = (int) GlobalVar.drawPanels.get(tbpData.getSelectedComponent().getClass().toString());
-		
-		updateData();
-		
+
 		Logger.noStatusLog("Selected Panel " + GlobalVar.selectedPanel);
+		tabSelectionChanged();
 	}
 	
-	private void initDraw() {
+	private void initDrawPanelsMap() {
 		try {
 			GlobalVar.drawPanels.put(pnlRawData.getClass().toString(), (int) GlobalVar.PNL_RAW);
 			GlobalVar.drawPanels.put(pnlParsed.getClass().toString(), (int) GlobalVar.PNL_PARSED);
-			GlobalVar.drawPanels.put(pnlGraph.getClass().toString(), (int) GlobalVar.PNL_GRAPH);
 			initDraw = true;
 		} catch (NullPointerException ex) {
 			initDraw = false;
@@ -606,10 +628,7 @@ public class App extends JFrame {
 	}
 	
 	public static void centerWindow(Window frame) {
-	    Dimension dimension = Toolkit.getDefaultToolkit().getScreenSize();
-	    int x = (int) ((dimension.getWidth() - frame.getWidth()) / 2);
-	    int y = (int) ((dimension.getHeight() - frame.getHeight()) / 2);
-	    frame.setLocation(x, y);
+		frame.setLocationRelativeTo(null);
 	}
 	
 	/**
@@ -626,6 +645,7 @@ public class App extends JFrame {
 		setTitle("MQTT Explorer");
 		setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 		setBounds(GlobalVar.WINDOW_BOUNDS);
+		setMinimumSize(GlobalVar.MINIMUM_BOUNDS);
 		centerWindow(this);
 		
 		menuBar = new JMenuBar();
@@ -692,9 +712,6 @@ public class App extends JFrame {
 		
 		pnlParsed = new DrawParsedData();
 		tbpData.addTab("Parsed Data", null, pnlParsed, null);
-		
-		pnlGraph = new DrawGraph();
-		tbpData.addTab("Graph", null, pnlGraph, null);
 
 		pnlTopic = new JPanel();
 		pnlTopic.setBorder(new TitledBorder(null, "Topic", TitledBorder.LEADING, TitledBorder.TOP, null, null));
@@ -717,21 +734,21 @@ public class App extends JFrame {
 					.addGroup(grpLoBackground.createParallelGroup(Alignment.TRAILING)
 						.addGroup(grpLoBackground.createSequentialGroup()
 							.addGroup(grpLoBackground.createParallelGroup(Alignment.TRAILING)
-								.addComponent(tbpData, GroupLayout.DEFAULT_SIZE, 578, Short.MAX_VALUE)
-								.addComponent(pnlShowTopics, GroupLayout.DEFAULT_SIZE, 578, Short.MAX_VALUE))
+								.addComponent(tbpData)
+								.addComponent(pnlShowTopics, GroupLayout.DEFAULT_SIZE, 573, Short.MAX_VALUE))
 							.addGap(18)
 							.addGroup(grpLoBackground.createParallelGroup(Alignment.LEADING)
 								.addGroup(grpLoBackground.createSequentialGroup()
 									.addComponent(pnlPublish, 0, 0, Short.MAX_VALUE)
 									.addContainerGap())
 								.addGroup(grpLoBackground.createSequentialGroup()
-									.addComponent(pnlServerSettings, GroupLayout.DEFAULT_SIZE, GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+									.addComponent(pnlServerSettings, GroupLayout.DEFAULT_SIZE, 363, Short.MAX_VALUE)
 									.addGap(8))
 								.addGroup(grpLoBackground.createSequentialGroup()
 									.addComponent(pnlTopic, 0, 0, Short.MAX_VALUE)
 									.addContainerGap())))
 						.addGroup(grpLoBackground.createSequentialGroup()
-							.addComponent(pnlStatus, GroupLayout.DEFAULT_SIZE, 956, Short.MAX_VALUE)
+							.addComponent(pnlStatus, GroupLayout.DEFAULT_SIZE, 950, Short.MAX_VALUE)
 							.addContainerGap())))
 		);
 		grpLoBackground.setVerticalGroup(
@@ -748,11 +765,11 @@ public class App extends JFrame {
 									.addComponent(pnlPublish, GroupLayout.PREFERRED_SIZE, 165, GroupLayout.PREFERRED_SIZE))
 								.addGroup(grpLoBackground.createSequentialGroup()
 									.addPreferredGap(ComponentPlacement.UNRELATED)
-									.addComponent(tbpData, GroupLayout.PREFERRED_SIZE, 364, GroupLayout.PREFERRED_SIZE))))
+									.addComponent(tbpData, GroupLayout.DEFAULT_SIZE, 364, Short.MAX_VALUE))))
 						.addComponent(pnlServerSettings, GroupLayout.PREFERRED_SIZE, 267, GroupLayout.PREFERRED_SIZE))
 					.addPreferredGap(ComponentPlacement.RELATED)
 					.addComponent(pnlStatus, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE)
-					.addContainerGap())
+					.addGap(0))
 		);
 		pnlShowTopics.setLayout(new BorderLayout(0, 0));
 		
@@ -774,12 +791,13 @@ public class App extends JFrame {
 		GroupLayout gl_pnlStatus = new GroupLayout(pnlStatus);
 		gl_pnlStatus.setHorizontalGroup(
 			gl_pnlStatus.createParallelGroup(Alignment.TRAILING)
-				.addComponent(txtStatus, GroupLayout.DEFAULT_SIZE, 956, Short.MAX_VALUE)
+				.addComponent(txtStatus, GroupLayout.DEFAULT_SIZE, 950, Short.MAX_VALUE)
 		);
 		gl_pnlStatus.setVerticalGroup(
-			gl_pnlStatus.createParallelGroup(Alignment.TRAILING)
-				.addGroup(Alignment.LEADING, gl_pnlStatus.createSequentialGroup()
-					.addComponent(txtStatus, GroupLayout.DEFAULT_SIZE, 29, Short.MAX_VALUE)
+			gl_pnlStatus.createParallelGroup(Alignment.LEADING)
+				.addGroup(gl_pnlStatus.createSequentialGroup()
+					.addGap(0, 0, Short.MAX_VALUE)
+					.addComponent(txtStatus, GroupLayout.PREFERRED_SIZE, 29, GroupLayout.PREFERRED_SIZE)
 					.addContainerGap())
 		);
 		pnlStatus.setLayout(gl_pnlStatus);
@@ -1046,7 +1064,7 @@ public class App extends JFrame {
 		inputsPublish = new ArrayList<JTextField>(
 			      Arrays.asList(txtPubTopic, txtPubMessage));
 		
-		initDraw();
+		initDrawPanelsMap();
 		setServerButton(GlobalVar.CONN_DISCONNECTED);
 		
 		repaint();

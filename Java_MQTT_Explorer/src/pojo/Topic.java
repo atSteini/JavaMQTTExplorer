@@ -4,7 +4,7 @@ import java.util.ArrayList;
 
 /*
  * @author Florian Steinkellner
- * @date March 22, 2021
+ * @date March 29, 2021
  */
 public class Topic {
 	private String topic;
